@@ -1,0 +1,12 @@
+name: HypothesisTests
+title: HypothesisTests
+username:
+account: jimmio78
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 2828307
+bundleId: 3648145
+url: https://jimmio78.shinyapps.io/HypothesisTests/
+when: 1600580425.0265
+asMultiple: FALSE
+asStatic: FALSE

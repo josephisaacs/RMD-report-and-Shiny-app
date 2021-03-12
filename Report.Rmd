@@ -1,0 +1,438 @@
+---
+title: "Assignment"
+author: "SID: 490469413"
+subtitle: "DATA2902"
+date: "23 September 2020"
+bibliography: "bibliography.bib"
+nocite: "@*"
+output:
+  html_document:
+    fig_caption: yes
+    theme: sandstone
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    code_folding: hide
+---
+
+```{r setup, include=F, message=F}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(janitor)
+library(ggthemes)
+library(knitr)
+library(kableExtra)
+```
+
+## Introduction
+
+This report will explore the habits and characteristics of the DATA2X02 cohort at the University of Sydney through three hypothesis tests. All tests will use the significance level $\alpha=0.05$. An accompanying Shiny app featuring dynamic hypothesis tests and visualisations is available [here](https://jimmio78.shinyapps.io/HypothesisTests/).
+
+```{r cleaning, message=F}
+rawdata = read_csv(raw_data.csv)
+
+#NOTE: Some of the data cleaning in this report has been adapted from the DATA2X02 lectures
+
+#Cleaning column names:
+dataset = rawdata %>% clean_names()
+colnames(dataset) = str_replace(
+  colnames(dataset),
+  pattern ="what_is_your_",
+  replacement = "")
+colnames(dataset)[2] = "covid_tests"
+colnames(dataset)[4] = "postcode"
+colnames(dataset)[5] = "dentist"
+colnames(dataset)[6] = "hours_studying"
+colnames(dataset)[7] = "social_media"
+colnames(dataset)[8] = "dog_cat"
+colnames(dataset)[9] = "live_with_parents"
+colnames(dataset)[10] = "hours_exercising"
+colnames(dataset)[13] = "hours_paid_work"
+colnames(dataset)[14] = "fave_season"
+colnames(dataset)[16] = "height"
+colnames(dataset)[17] = "floss_freq"
+colnames(dataset)[18] = "eyewear"
+colnames(dataset)[20] = "steak"
+colnames(dataset)[21] = "stress"
+
+#Cleaning gender column
+dataset = dataset %>% mutate(
+  gender = toupper(gender),
+  gender = str_sub(gender, start = 1, end = 1),
+  gender = case_when(
+                     gender == "F" ~ "Female",
+                     gender == "M" ~ "Male",
+                     gender == "N" ~ "Non-binary")
+)
+
+#Cleaning eye colour column:
+dataset = dataset %>% 
+  mutate(
+    eye_colour = str_to_sentence(eye_colour),
+    eye_colour = fct_lump(eye_colour, n = 6)
+  )
+
+#Cleaning height column:
+dataset = dataset %>% 
+  mutate(
+    height = dplyr::case_when(
+      height < 3 ~ height*100,
+      TRUE ~ height
+    )
+  )
+
+#Cleaning social media column:
+dataset = dataset %>% 
+  mutate(
+    social_media = tolower(social_media),
+    social_media = str_sub(social_media, start = 1, end = 2),
+    social_media = fct_lump_min(social_media, 2),
+    social_media = case_when(
+      social_media == "bi" ~ "bilibili",
+      social_media == "ed" ~ "Ed",
+      social_media == "fa" ~ "Facebook",
+      social_media == "in" ~ "Instagram",
+      social_media == "me" ~ "Messenger",
+      social_media == "re" ~ "Reddit",
+      social_media == "sn" ~ "Snapchat",
+      social_media == "ti" ~ "TikTok",
+      social_media == "tw" ~ "Twitter",
+      social_media == "we" ~ "WeChat",
+      social_media == "yo" ~ "YouTube",
+      social_media == "no" ~ "Other or none",
+      social_media == "Other" ~ "Other or none"))
+
+#dim(dataset)
+
+#Removing values where total study+exercise+work time is unrealistic
+dataset = dataset %>%
+  filter(hours_studying+hours_exercising+hours_paid_work<120 | is.na(hours_exercising) | is.na(hours_paid_work) | is.na(hours_studying))
+
+#Remove rows with no responses except timestamp:
+dataset_notime = dataset %>% select(!timestamp)
+dataset = dataset %>%
+  filter(!is.na(dataset_notime))
+
+#dim(dataset)
+
+#Ordering relevant columns:
+dataset = dataset %>% 
+  mutate(
+    steak = factor(steak, levels = c("Rare", "Medium-rare", "Medium", "Medium-well done", "Well done", "I don't eat beef"))
+  ) %>% 
+  mutate(
+    fave_season = factor(fave_season, levels = c("Summer", "Autumn", "Winter", "Spring"))
+  ) %>% 
+  mutate(
+    dentist = factor(dentist, levels = c("Less than 6 months", "Between 6 and 12 months", "Between 12 months and 2 years", "More than 2 years"))
+  ) %>%
+  mutate(
+    floss_freq = factor(floss_freq, levels = c("Every day", "Most days", "Weekly", "Less than once a week"))
+  ) %>%
+  mutate(
+    social_media = factor(social_media, levels = c("bilibili", "Ed", "Facebook", "Instagram", "Messenger", "Reddit", "Snapchat", "TikTok", "Twitter", "WeChat", "YouTube", "Other or none"))
+  )
+
+write_csv(dataset, "App/cleaned_data.csv") #To use in Shiny app
+```
+
+### Source and flaws of data
+
+The data used in this report was collected through a voluntary sample survey conducted on the DATA2X02 cohort, with `r dim(rawdata)[1]` responses to `r dim(rawdata)[2]-1` questions.
+
+**The sample of DATA2X02 students is not random**, as participation in the survey was completely voluntary. This may lead to **selection and non-response biases**, as it is possible that a certain type of student is more likely to respond to the survey.
+
+For example, more conscientious students may be more likely to engage with the Ed forum where the survey was distributed, leading to potential bias in the variable concerning hours spent studying. Conversely, it is possible that busier students are *less* likely to have the time to respond to the survey, potentially causing bias in the variables concerning hours spent studying, exercising, and working in paid employment.
+
+**There are also issues present in the way some questions are posed**. For example, the questions concerning the respondent's height and shoe size do not specify units. For the former variable, the data can be cleaned by converting all measurements into centimetres. However, the latter variable is unusable; while it is clear which responses record European sizes, it is impossible to distinguish US and UK sizes (which are in a similar range), and thus there is no way to sensibly convert this data.
+
+One question asks the respondent if they had a dog or a cat growing up, while another asks if they wear glasses or contacts. In both cases, the answer is recorded as either "yes" or "no". The data would have been more useful if respondents had the option to specify which category applies to them.
+
+There is also potential **recall bias** in some questions, such as the one concerning hours worked in paid employment in semester 1, where students may easily misremember the hours. Additionally, the questions asking for average time spent on work and studying are problematic as the non-specificity of "average" allows respondents to slightly exaggerate their responses. It may have been more useful to ask students how much time they spent in the week prior to completion of the survey.
+
+### Data cleaning
+
+To clean the data, several categorical variables were put into sensible orders. Preferred social media platforms with fewer than 2 responses were pooled into an 'other' category, as were all eye colours outside of the 6 most common responses. All heights were also converted to centimetres. Rows with no responses were removed, as were rows where the times spent studying, exercising and working added up to an unrealistically high number (suggesting dishonest responses overall); altogether `r dim(rawdata)[1]-dim(dataset)[1]` rows were removed. Some of the code in this process was adapted from Tarr (2020).
+
+## Hypothesis tests
+
+### Does the number of COVID tests follow a Poisson distribution?
+
+To test whether the number of COVID tests follows a Poisson distribution, we can use a goodness of fit $\chi^2$ test.
+
+The null hypothesis, $H_0$, is that the data follows a Poisson distribution, while the alternative hypothesis, $H_1$, is that it doesn't. All hypothesis tests in this report will use the significance level $\alpha=0.05$. 
+
+First, let us compare the bar charts of our observed frequencies and our expected frequencies following the Poisson distribution.
+
+```{r poisson graphs, fig.show="hold", out.width="50%", message=F}
+
+y = as.vector(table
+              (factor
+                (dataset$covid_tests,
+                  levels=min(dataset$covid_tests,na.rm=T):max(dataset$covid_tests,na.rm=T)
+                  )
+                )
+              ) # observed counts
+x = c(min(dataset$covid_tests,na.rm=T):max(dataset$covid_tests,na.rm=T)) # corresponding groups
+n = sum(y) # total sample size
+k = length(y) # number of different groups
+
+lambda = sum(y*x)/n # estimating lambda parameter for the Poisson distribution
+p = dpois(x, lambda=lambda) #defining our Poisson probability vector
+
+ey = n*p # expected frequency vector
+
+ggplot() +
+  aes(x=x,y=y) +
+  geom_bar(fill="salmon3",stat="identity") +
+  theme_solarized() +
+  labs(
+    title="Observed frequencies",
+    subtitle= "",#So that the axes of both graphs line up
+    x="Number of COVID-19 tests",
+    y="Frequency"
+  ) +
+  scale_x_continuous(breaks=c(0:10),labels=c(0:10)) +
+  ylim(0, 125)
+ggplot() +
+  aes(x=x,y=ey) +
+  geom_bar(fill="salmon3",stat="identity") +
+  theme_solarized() +
+  labs(
+    title="Expected frequencies",
+    subtitle="Poisson distribution",
+    x="Number of COVID-19 tests",
+    y="Frequency"
+  ) +
+  scale_x_continuous(breaks=c(0:10),labels=c(0:10)) +
+  ylim(0, 125)
+```
+
+For the $\chi^2$ test to be appropriate, we assume that all observations are independent, and that all expected frequencies are greater than 5. Let us verify the latter assumption.
+
+```{r assumption}
+kable(tibble(x,ey),digits=2,col.names=c("Number of tests", "Frequency"),caption="Expected frequencies") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = F, position="center")
+```
+
+So, the assumption does not hold. We can fix this by combining adjacent categories.
+
+```{r merge categories}
+yr = c(y[1:2], sum(y[3:11]))
+eyr = c(ey[1:2], sum(ey[3:11]))
+pr = c(p[1:2], sum(p[3:11]))
+kr = length(yr)
+xr = c(0, 1,"2 or more")
+
+kable(tibble(xr,eyr),digits=2,col.names=c("Number of tests", "Frequency"),caption="Expected frequencies",align='rr') %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = F, position="center")
+```
+
+The assumption now holds; all categories have more than 5 expected values. We can visualise our new categories with updated bar charts.
+
+```{r updated graphs, fig.show="hold", out.width="50%", message=F}
+ggplot() +
+  aes(x=xr,y=yr) +
+  geom_bar(fill="salmon3",stat="identity") +
+  theme_solarized() +
+  labs(
+    title="Observed frequencies",
+    subtitle="",
+    x="Number of COVID-19 tests",
+    y="Frequency"
+  ) +
+  ylim(0, 125)
+ggplot() +
+  aes(x=xr,y=eyr) +
+  geom_bar(fill="salmon3",stat="identity") +
+  theme_solarized() +
+  labs(
+    title="Expected frequencies",
+    subtitle="Poisson distribution",
+    x="Number of COVID-19 tests",
+    y="Frequency"
+  ) +
+  ylim(0, 125)
+```
+
+We now calculate the test statistic.
+
+```{r test statistic}
+t0 = sum((yr-eyr)^2/eyr)
+t0
+```
+
+We find that $t_0 = \sum_{i=1}^3 \frac{(y_i-e_i)^2}{e_i} \approx `r round(t0, 2)`$. Finally, we calculate the p-value.
+
+```{r p-value}
+pval = pchisq(t0,df=kr-1-1,lower.tail=F) #We remove an extra degree of freedom because of the estimated parameter lambda
+pval
+```
+
+So the probability of observing a value as or more extreme than our test statistic, assuming $H_0$ is true, is $P(\chi_1^2\geq t_0)\approx `r signif(pval, digits=3)` < \alpha = 0.05$. Thus we reject $H_0$; there is strong evidence in the data that the number of COVID tests do not follow the Poisson distribution.
+
+### Are all seasons equally favoured?
+
+Again, we will use a $\chi^2$ test of goodness of fit. However, in this case we will test the data against an even distribution, rather than the Poisson distribution. The null hypothesis, $H_0$, is that preferences in season are evenly distributed, while the alternative hypothesis, $H_1$, is that there is some difference.
+
+```{r season barplot and table}
+dataseason = dataset %>% drop_na(fave_season)
+dataseason %>% ggplot() +
+  aes(x = fave_season) +
+  geom_bar(fill="salmon3") +
+  theme_solarized() + 
+  geom_hline(yintercept = length(dataseason$fave_season)/length(table(dataseason$fave_season)), colour = "indianred4") +
+  labs(
+    title="Favourite seasons",
+    x="Season",
+    y="Frequency"
+  )
+```
+
+This bar chart shows the preferences for each season, with the horizontal line representing our expected count for each category, `r length(dataseason$fave_season)/4`. We assume that all observations are independent, and that each category has an expected count greater than 5 (which is certainly true, as shown above).
+
+```{r season test}
+seasonstable = table(dataseason$fave_season)
+seasontest = chisq.test(seasonstable)
+seasontest
+```
+
+So the observed test statistic is $t_0 = \sum_{i=1}^4 \frac{(y_i-e_i)^2}{e_i} \approx `r round(seasontest$statistic, 2)`$, which returns a p-value of $P(\chi_3^2\geq t_0) \approx `r round(seasontest$p.value, 2)` > \alpha = 0.05$. This means that there is insufficient evidence to reject $H_0$. Thus, the data is consistent with the hypothesis that seasonal preferences are in equal proportion.
+
+### Are the time since last visit to the dentist and flossing frequency independent?
+
+This can be tested using a $\chi^2$ test for independence. The test for independence has been chosen over the test of homogeneity since we are splitting one sample up by a variable, rather than comparing two separate populations. First, let us observe this data in a contingency table.
+
+```{r tooth table}
+datatooth = dataset %>% drop_na(dentist, floss_freq)
+
+toothtable = table(datatooth$dentist, datatooth$floss_freq)
+csum = colSums(toothtable)
+rsum = rowSums(toothtable)
+displaytable = rbind(toothtable, csum)
+rdisplaysum = rowSums(displaytable)
+displaytable = cbind(displaytable, rdisplaysum)
+rownames(displaytable)[5] = colnames(displaytable)[5] = "Total"
+
+kable(displaytable, caption="Observed frequencies") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  column_spec(6, bold = T) %>%
+  row_spec(5, bold = T) %>%
+  add_header_above(c(" " = 1,"Flossing frequency" = 5)) %>%
+  pack_rows("Last visit to dentist", 1, 4)
+```
+
+Our null hypothesis, $H_0$, is that the two variables are independent (i.e. $p_{ij} = p_{i\bullet}p_{\bullet j}$ for all rows $i$ and columns $j$), in comparison to our alternative hypothesis, $H_1$, that not every equality holds.
+
+In order to use the $\chi^2$ test, we must assume that all expected cell counts are greater than 5. Let us verify this.
+
+```{r tooth expected}
+evtable = (matrix(rsum, 4, 4, byrow=F) * matrix(csum, 4, 4, byrow=T))/sum(toothtable)
+evdisplay = rbind(evtable, csum)
+evdisplay = cbind(evdisplay, rdisplaysum)
+rownames(evdisplay) = c("Less than 6 months", "Between 6 and 12 months", "Between 12 months and 2 years", "More than 2 years", "Total")
+colnames(evdisplay) = c("Every day", "Most days", "Weekly", "Less than once a week", "Total")
+
+kable(evdisplay, digits=1,caption="Expected frequencies") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  column_spec(6, bold = T) %>%
+  row_spec(5, bold = T) %>%
+  add_header_above(c(" " = 1,"Flossing frequency" = 5)) %>%
+  pack_rows("Last visit to dentist", 1, 4)
+```
+
+There are some cells with expected frequencies less than 5, so our assumption does not hold. We could resolve this by combining the columns for "Most days" and "Weekly" into a new category.
+
+```{r tooth table 2}
+datatoothf = datatooth %>% mutate(
+  floss_freq = case_when(
+    floss_freq == "Every day" ~ "Every day",
+    floss_freq == "Most days" ~ "At least weekly",
+    floss_freq == "Weekly" ~ "At least weekly",
+    floss_freq == "Less than once a week" ~ "Less than once a week"),
+  floss_freq = factor(floss_freq, levels = c("Every day", "At least weekly", "Less than once a week")))
+
+toothtablef = table(datatoothf$dentist, datatoothf$floss_freq)
+csumf = colSums(toothtablef)
+rsumf = rowSums(toothtablef)
+displaytablef = rbind(toothtablef, csumf)
+rdisplaysumf = rowSums(displaytablef)
+displaytablef = cbind(displaytablef, rdisplaysumf)
+rownames(displaytablef)[5] = colnames(displaytablef)[4] = "Total"
+
+kable(displaytablef, caption="Observed frequencies") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  column_spec(5, bold = T) %>%
+  row_spec(5, bold = T) %>%
+  add_header_above(c(" " = 1,"Flossing frequency" = 4)) %>%
+  pack_rows("Last visit to dentist", 1, 4)
+
+evtablef = (matrix(rsumf, 4, 3, byrow=F) * matrix(csumf, 4, 3, byrow=T))/sum(toothtablef)
+evdisplayf = rbind(evtablef, csumf)
+evdisplayf = cbind(evdisplayf, rdisplaysumf)
+rownames(evdisplayf) = c("Less than 6 months", "Between 6 and 12 months", "Between 12 months and 2 years", "More than 2 years", "Total")
+colnames(evdisplayf) = c("Every day", "At least weekly", "Less than once a week", "Total")
+
+kable(evdisplayf, digits=1,caption="Expected frequencies") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  column_spec(5, bold = T) %>%
+  row_spec(5, bold = T) %>%
+  add_header_above(c(" " = 1,"Flossing frequency" = 4)) %>%
+  pack_rows("Last visit to dentist", 1, 4)
+```
+
+Now all expected cell counts are greater than 5, so our assumptions hold. The observed counts and proportions of the two variables can be observed in the following bar charts.
+
+```{r tooth graphs, fig.show="hold", out.width="50%", message=F}
+ggplot(datatoothf) +
+  aes(x=dentist, fill=floss_freq) +
+  geom_bar() +
+  theme_solarized() +
+  theme(legend.position = "bottom") +
+  scale_x_discrete(labels=c("<6 months", "6–12 months", "1–2 years", ">2 years")) +
+  scale_fill_manual(values=c("salmon3", "mediumaquamarine", "mediumpurple4"))+
+  labs(
+    title="Observed frequencies",
+    x="Time since last dental appointment",
+    y="Count",
+    fill="Flossing frequency"
+  )
+ggplot(datatoothf) +
+  aes(x=dentist, fill=floss_freq) +
+  geom_bar(position="fill") +
+  theme_solarized() +
+  theme(legend.position = "bottom") +
+  scale_x_discrete(labels=c("<6 months", "6–12 months", "1–2 years", ">2 years")) +
+  scale_fill_manual(values=c("salmon3", "mediumaquamarine", "mediumpurple4"))+
+  labs(
+    title="Observed proportions",
+    x="Time since last dental appointment",
+    y="Proportion",
+    fill="Flossing frequency"
+  )
+```
+
+Now let us perform the $\chi^2$ test.
+
+```{r}
+toothchitest = chisq.test(toothtablef)
+toothchitest
+```
+
+Our test statistic, $t_0 = \sum_{i=1}^4 \sum_{j=1}^3 \frac{(y_i-y_{i\bullet}y_{\bullet j})^2}{y_{i\bullet}y_{\bullet j}} \approx `r round(toothchitest$statistic, 2)`$, has a p-value of $P(\chi_6^2\geq t_0) \approx `r round(toothchitest$p.value, 2)` > \alpha = 0.05$. Thus, there is insufficient evidence to reject $H_0$, and the data is consistent with the hypothesis that the time since last dental appointment and frequency of flossing are independent.
+
+We can also perform a $\chi^2$ test on the original categories by using a Monte Carlo simulation, which does not assume any cell counts.
+
+```{r}
+set.seed(91)
+mctoothchitest = chisq.test(toothtable, simulate.p.value = T, B=10000)
+mctoothchitest
+```
+
+This returns a similar p-value of $`r round(mctoothchitest$p.value, 2)`$, so we maintain our conclusion; the data is consistent with the hypothesis that the two variables are independent.
+
+## Conclusion
+
+This report has found that, amongst the DATA2X02 cohort, the number of COVID tests are unlikely to follow the Poisson distribution, all four seasons may be preferred equally, and that students' flossing frequency and the time since their last visit to the dentist may be independent. However, the veracity of these results is inhibited by the sampling procedure. Future research would need to be conducted with a random sample of students, and with improved question wording.
+
+## References
